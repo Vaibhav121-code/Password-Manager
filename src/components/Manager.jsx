@@ -1,250 +1,197 @@
-import React, { useEffect } from 'react'
-import { useRef, useState } from 'react'
-import { ToastContainer, toast, Bounce } from 'react-toastify';
-import { v4 as uuidv4 } from 'uuid';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "react-toastify";
+
+import { apiRequest } from "../lib/api";
+import GeneratorModal from "./GeneratorModal";
+import PasswordForm from "./PasswordForm";
+import PasswordList from "./PasswordList";
+
+const emptyForm = { site: "", username: "", password: "" };
 
 const Manager = () => {
-    const ref = useRef()
-    const passwordRef = useRef()
-    const [form, setform] = useState({ site: "", username: "", password: "" })
-    const [passwordArray, setPasswordArray] = useState([])
-    const getpasswords=async()=>{
-        let req=await fetch("http://localhost:3000/")
-        let passwords = await req.json();
-        setPasswordArray(passwords);
-        console.log(passwords);
+  const [passwords, setPasswords] = useState([]);
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [generatorOpen, setGeneratorOpen] = useState(false);
+  const [revealed, setRevealed] = useState({});
+  const revealTimers = useRef(new Map());
+
+  const loadPasswords = useCallback(async () => {
+    try {
+      const data = await apiRequest("/passwords");
+      setPasswords(data.passwords);
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setLoading(false);
     }
-    useEffect(() => {
-        getpasswords()
-    }, [])
-    const copytext = (text) => {
-        toast('copied to clipboard', {
-            position: "top-right",
-            autoClose: 5000,
-            hideProgressBar: false,
-            closeOnClick: false,
-            pauseOnHover: true,
-            draggable: true,
-            progress: undefined,
-            theme: "dark",
-            transition: Bounce,
+  }, []);
+
+  useEffect(() => {
+    loadPasswords();
+    const timers = revealTimers.current;
+    return () => timers.forEach((timer) => clearTimeout(timer));
+  }, [loadPasswords]);
+
+  const resetForm = () => {
+    setForm(emptyForm);
+    setEditingId(null);
+  };
+
+  const savePassword = async (event) => {
+    event.preventDefault();
+    if (!form.site.trim() || !form.username.trim()) {
+      toast.error("Site and username are required.");
+      return;
+    }
+    if (!editingId && !form.password) {
+      toast.error("A password is required.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        site: form.site.trim(),
+        username: form.username.trim(),
+        ...(form.password ? { password: form.password } : {}),
+      };
+      await apiRequest(editingId ? `/passwords/${editingId}` : "/passwords", {
+        method: editingId ? "PUT" : "POST",
+        body: payload,
+      });
+      toast.success(editingId ? "Password entry updated." : "Password saved.");
+      resetForm();
+      await loadPasswords();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const editPassword = (entry) => {
+    setEditingId(entry.id);
+    setForm({ site: entry.site, username: entry.username, password: "" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const deletePassword = async (entry) => {
+    const confirmed = window.confirm(
+      `Delete the password entry for ${entry.site}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      await apiRequest(`/passwords/${entry.id}`, { method: "DELETE" });
+      toast.success("Password deleted.");
+      if (editingId === entry.id) resetForm();
+      await loadPasswords();
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
+  const revealPassword = async (entry) => {
+    if (revealed[entry.id]) {
+      clearTimeout(revealTimers.current.get(entry.id));
+      revealTimers.current.delete(entry.id);
+      setRevealed((current) => {
+        const next = { ...current };
+        delete next[entry.id];
+        return next;
+      });
+      return;
+    }
+
+    try {
+      const data = await apiRequest(`/passwords/${entry.id}/reveal`, {
+        method: "POST",
+      });
+      setRevealed((current) => ({ ...current, [entry.id]: data.password }));
+
+      const timer = setTimeout(() => {
+        setRevealed((current) => {
+          const next = { ...current };
+          delete next[entry.id];
+          return next;
         });
-        navigator.clipboard.writeText(text)
+        revealTimers.current.delete(entry.id);
+      }, 20000);
+      revealTimers.current.set(entry.id, timer);
+    } catch (error) {
+      toast.error(error.message);
     }
-    const showpassword = () => {
-        passwordRef.current.type = "text"
-        console.log(ref.current.src);
-        if (ref.current.src.includes("icons/eyecross.png")) {
-            ref.current.src = "icons/eye.png"
-            passwordRef.current.type = "text"
-        } else {
-            ref.current.src = "icons/eyecross.png"
-            passwordRef.current.type = "password"
-        }
+  };
 
+  const copyText = async (text, label) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copied.`);
+    } catch {
+      toast.error("Clipboard access was denied by the browser.");
     }
-    const savePassword = async() => {
-        if (form.site.length > 3 && form.username.length > 3 && form.password.length > 3) {
-            await fetch("http://localhost:3000/",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:form.id})})
-            setPasswordArray([...passwordArray, { ...form, id: uuidv4() }])
-            await fetch("http://localhost:3000/",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ ...form, id: uuidv4()})})
-            //localStorage.setItem("passwords", JSON.stringify([...passwordArray, { ...form, id: uuidv4() }]))
-            //console.log(...passwordArray, form)
-            setform({ site: "", username: "", password: "" })
-            toast('Password Saved', {
-                position: "top-right",
-                autoClose: 5000,
-                hideProgressBar: false,
-                closeOnClick: false,
-                pauseOnHover: true,
-                draggable: true,
-                progress: undefined,
-                theme: "dark",
-                transition: Bounce,
-            });
-        } else {
-            toast('Password not saved', {
-                position: "top-right",
-                autoClose: 5000,
-                hideProgressBar: false,
-                closeOnClick: false,
-                pauseOnHover: true,
-                draggable: true,
-                progress: undefined,
-                theme: "dark",
-                transition: Bounce,
-            });
+  };
 
-        }
+  return (
+    <div className="page-shell vault-page">
+      <section className="hero-panel">
+        <div>
+          <p className="eyebrow">Encrypted personal vault</p>
+          <h1>Your credentials, organized and protected.</h1>
+          <p className="hero-copy">
+            Passwords are encrypted before storage and only decrypted when you
+            explicitly reveal them.
+          </p>
+        </div>
+        <div className="hero-stat" aria-label={`${passwords.length} saved accounts`}>
+          <strong>{passwords.length}</strong>
+          <span>saved accounts</span>
+        </div>
+      </section>
 
+      <PasswordForm
+        editingId={editingId}
+        form={form}
+        onCancel={resetForm}
+        onChange={setForm}
+        onGenerate={() => setGeneratorOpen(true)}
+        onSubmit={savePassword}
+        saving={saving}
+      />
 
-    }
-    const deletePassword = async(id) => {
-        console.log("Deleting password with id:", id)
-        let c = confirm("Do you really want to delete password")
-        if (c) {
-            setPasswordArray(passwordArray.filter(item => item.id !== id))
-            let res=await fetch("http://localhost:3000/",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({ id})})
-            //localStorage.setItem("password", JSON.stringify([passwordArray.filter(item => item.id !== id)]))
-            toast('Password Deleted', {
-                position: "top-right",
-                autoClose: 5000,
-                hideProgressBar: false,
-                closeOnClick: false,
-                pauseOnHover: true,
-                draggable: true,
-                progress: undefined,
-                theme: "dark",
-                transition: Bounce,
-            });
-        }
+      <section className="section-block">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Vault</p>
+            <h2>Your passwords</h2>
+          </div>
+          <span className="count-pill">{passwords.length} total</span>
+        </div>
+        <PasswordList
+          loading={loading}
+          passwords={passwords}
+          revealed={revealed}
+          onCopy={copyText}
+          onDelete={deletePassword}
+          onEdit={editPassword}
+          onReveal={revealPassword}
+        />
+      </section>
 
-        // console.log(...passwordArray, form)
-    }
-    const editPassword = (id) => {
-        console.log("Editing password with id:", id)
-        setform({...passwordArray.filter(i => i.id === id)[0],id:id})
-        setPasswordArray(passwordArray.filter(item => item.id !== id))
-        // localStorage.setItem("password", JSON.stringify([...passwordArray,{...form , id: uuidv4()}]))
-        // console.log(...passwordArray, form)
-    }
-    const handleChange = (e) => {
-        setform({ ...form, [e.target.name]: e.target.value })
-    }
-    return (
-        <>
-            <ToastContainer
-                position="top-right"
-                autoClose={5000}
-                hideProgressBar={false}
-                newestOnTop={false}
-                closeOnClick={false}
-                rtl={false}
-                pauseOnFocusLoss
-                draggable
-                pauseOnHover
-                theme="light"
-            />
-            <div className=" absolute inset-0 -z-10 h-full w-full bg-white [background:radial-gradient(125%_125%_at_50%_10%,#fff_40%,#63e_100%)]"></div>
-            <div className=' p-3 md:p-0 md:mycontainer min-h-[82vh]'>
-                <h1 className=' text-4xl text font-bold text-center'>
-                    <span className=' text-green-500'>&lt;</span>
-                    Pass<span className=' text-green-500'>OP/&gt;</span>
-                </h1>
-                <p className=' text-green-700 text-lg'>Your own Password Manager</p>
-                <div className=' flex flex-col p-4 text-black gap-8 items-center'>
-                    <input value={form.site} onChange={handleChange} placeholder="Enter Site" className=' rounded-full bg-white border border-green-700 w-full p-4 py-1' type='text' name="site" id="site" />
-                    <div className=' flex flex-col md:flex-row w-full justify-between gap-8'>
-                        <input value={form.username} onChange={handleChange} placeholder="Enter Username" className=' rounded-full bg-white border border-green-700 w-full p-4 py-1' type='text' name="username" id="username" />
-                        <div className=' relative'>
-                            <input ref={passwordRef} value={form.password} onChange={handleChange} placeholder="Enter Password" className=' rounded-full bg-white border border-green-700 w-full p-4 py-1' type='password' name="password" id="password" />
-                            <span className=' absolute right-[4px] top-[3px] cursor-pointer' onClick={showpassword}>
-                                <img ref={ref} className=' p-1' width={26} src="icons/eye.png" alt="eye" />
-                            </span>
-                        </div>
+      <GeneratorModal
+        open={generatorOpen}
+        onClose={() => setGeneratorOpen(false)}
+        onUse={(password) => {
+          setForm((current) => ({ ...current, password }));
+          setGeneratorOpen(false);
+          toast.success("Generated password added to the form.");
+        }}
+      />
+    </div>
+  );
+};
 
-                    </div>
-                    <button onClick={savePassword} className=' flex justify-center items-center gap-2 bg-green-500 hover:bg-green-400 rounded-full px-5 py-2 w-fit border-2 border-green-900'>
-                        <lord-icon
-                            src="https://cdn.lordicon.com/efxgwrkc.json"
-                            trigger="hover">
-                        </lord-icon>
-                        Save password</button>
-                </div>
-                <div className=' passwords'>
-                    <h2 className='font-bold text-2xl py-4'>Your Passwords</h2>
-                    {passwordArray.length === 0 && <div>No passwords to show</div>}
-                    {passwordArray.length != 0 && <table className=" table table-auto w-full rounded-xl overflow-hidden mb-10">
-                        <thead className=' bg-green-800 text-white'>
-                            <tr>
-                                <th className=' py-2 '>Site</th>
-                                <th className=' py-2 '>Username</th>
-                                <th className=' py-2 '>Password</th>
-                                <th className=' py-2 '>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className=' bg-green-100'>
-                            {passwordArray.map((item, index) => {
-                                return (
-                                    <tr key={index}>
-                                        {/* SITE */}
-                                        <td className='py-2 border border-white text-center w-32'>
-                                            <div className='flex items-center justify-center gap-2'>
-                                                <a
-                                                    href={item.site.startsWith("http") ? item.site : `https://${item.site}`}
-                                                    target='_blank'
-                                                    rel='noopener noreferrer'
-                                                    className='text-blue-600 hover:underline'
-                                                >
-                                                    {item.site}
-                                                </a>
-                                                <img
-                                                    onClick={() => copytext(item.site)}
-                                                    src="icons/copy.png"
-                                                    alt="Copy"
-                                                    width={16}
-                                                    className='cursor-pointer'
-                                                    title="Copy Site"
-                                                />
-                                            </div>
-                                        </td>
-
-                                        {/* USERNAME */}
-                                        <td className='py-2 border border-white text-center w-32'>
-                                            <div className='flex items-center justify-center gap-2'>
-                                                <span>{item.username}</span>
-                                                <img
-                                                    onClick={() => copytext(item.username)}
-                                                    src="icons/copy.png"
-                                                    alt="Copy"
-                                                    width={16}
-                                                    className='cursor-pointer'
-                                                    title="Copy Username"
-                                                />
-                                            </div>
-                                        </td>
-
-                                        {/* PASSWORD */}
-                                        <td className='py-2 border border-white text-center w-32'>
-                                            <div className='flex items-center justify-center gap-2'>
-                                                <span>{"*".repeat(item.password.length)}</span>
-                                                <img
-                                                    onClick={() => copytext(item.password)}
-                                                    src="icons/copy.png"
-                                                    alt="Copy"
-                                                    width={16}
-                                                    className='cursor-pointer'
-                                                    title="Copy Password"
-                                                />
-                                            </div>
-                                        </td>
-                                        <td className='justify-center py-2 w-2 border border-white text-center'>
-                                            <span className='cursor-pointer mx-1' onClick={() => { editPassword(item.id) }}>
-                                                <script src="https://cdn.lordicon.com/lordicon.js"></script>
-                                                <lord-icon
-                                                    src="https://cdn.lordicon.com/meaqueth.json"
-                                                    trigger="hover"
-                                                    style={{ "width": "25px", "height": "25px" }}>
-                                                </lord-icon>
-                                            </span>
-                                            <span className='cursor-pointer mx-1' onClick={() => { deletePassword(item.id) }}>
-                                                <script src="https://cdn.lordicon.com/lordicon.js"></script>
-                                                <lord-icon
-                                                    src="https://cdn.lordicon.com/xyfswyxf.json"
-                                                    trigger="hover"
-                                                    style={{ "width": "25px", "height": "25px" }}>
-                                                </lord-icon>
-                                            </span>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>}
-                </div>
-            </div>
-        </>
-    )
-}
-
-export default Manager
+export default Manager;

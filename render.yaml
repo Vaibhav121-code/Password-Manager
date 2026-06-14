@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: passop-password-manager
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build && npm --prefix backend ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: PASSWORD_HASH_KEY
+        generateValue: true
+      - key: TRUST_PROXY
+        value: "true"
