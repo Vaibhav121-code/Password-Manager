@@ -1,47 +1,22 @@
-const express = require('express')
-const app = express()
-const port = 3000
-const cors= require('cors')
-//require('dotenv').config();
-const dotenv= require('dotenv')
-const bodyparser=require('body-parser')
-const { MongoClient } = require('mongodb');
-dotenv.config()
+const dotenv = require("dotenv");
 
-// Connection URL
-const url = 'mongodb://localhost:27017';
-const client = new MongoClient(url);
+dotenv.config();
 
-// Database Name
-const dbName = 'passop';
-app.use(bodyparser.json())
-app.use(cors())
-client.connect();
-//console.log(process.env.MONGO_URI)
-//get all passwords
-app.get('/', async (req, res) => {
-  const db = client.db(dbName);
-  const collection = db.collection('passwords');
-  const findResult = await collection.find({}).toArray();
-  res.json(findResult)
-})
-//save a password
-app.post('/', async (req, res) => {
-  const password=req.body
-  const db = client.db(dbName);
-  const collection = db.collection('passwords');
-  const findResult = await collection.insertOne(password);
-  res.send({success:true, result:findResult} )
-})
-//delete a password
-app.delete('/', async (req, res) => {
-  const password=req.body
-  const db = client.db(dbName);
-  const collection = db.collection('passwords');
-  const findResult = await collection.deleteOne(password);
-  res.send({success:true, result:findResult} )
-})
+const app = require("./src/app");
+const connectDatabase = require("./src/config/database");
+const validateEnvironment = require("./src/config/environment");
 
-app.listen(port, () => {
-  console.log(`Example app listening on port http://localhost:${port}`)
-})
+const startServer = async () => {
+  validateEnvironment();
+  await connectDatabase();
+
+  const port = Number(process.env.PORT) || 3000;
+  app.listen(port, () => {
+    console.log(`PassOP API listening on http://localhost:${port}`);
+  });
+};
+
+startServer().catch((error) => {
+  console.error("Unable to start the server:", error.message);
+  process.exit(1);
+});
