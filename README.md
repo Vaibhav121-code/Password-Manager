@@ -197,37 +197,20 @@ Feature checklist:
 
 ## Deployment
 
-The included `render.yaml` deploys the React frontend and Express API as one
-Render web service. Keeping both on the same origin preserves the intentionally
-strict authentication cookie.
-
-1. Create a MongoDB Atlas cluster and a database user with access only to the
-   PassOP database.
-2. Add an Atlas network access rule that permits the Render service to connect.
-3. In Render, create a new Blueprint and select this GitHub repository.
-4. Enter `MONGO_URI` when Render prompts for it.
-5. Generate an encryption key locally:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-6. Enter that value as `ENCRYPTION_KEY`. Store a backup in a password manager;
-   losing or rotating it makes existing saved credentials unrecoverable.
-7. Deploy and verify `/api/health`, registration, login, save, reveal, and
-   logout on the assigned HTTPS URL.
-
-Render generates `JWT_SECRET` and `PASSWORD_HASH_KEY` during Blueprint
-creation. Do not commit production secrets or paste them into `render.yaml`.
-`TRUST_PROXY=true` is set because Render terminates HTTPS in front of the Node
-service.
-
-For other hosting platforms, run this build command:
-
-```bash
-npm ci && npm run build && npm --prefix backend ci --omit=dev
-```
-
-Then start the service with `npm start`. Set `NODE_ENV=production`,
-`MONGO_URI`, `JWT_SECRET`, `ENCRYPTION_KEY`, `PASSWORD_HASH_KEY`, and
-`TRUST_PROXY=true` in the platform's secret manager.
+- Serve everything over HTTPS. Production cookies are marked `Secure`.
+- Prefer serving the frontend and `/api` on the same site through a reverse
+  proxy. The cookie is intentionally `SameSite=Strict`.
+- If frontend and API must be cross-site, redesign cookie/CSRF settings
+  deliberately rather than simply loosening `SameSite`.
+- Store all secrets in the hosting platform's secret manager.
+- Use a restricted MongoDB user, Atlas IP/network controls, backups, and
+  encryption at rest.
+- Set the exact production `CLIENT_ORIGIN`; do not use wildcard credentialed
+  CORS.
+- Set `TRUST_PROXY=true` only when the API is behind a trusted proxy.
+- Keep rate limiting at the edge as well as the API, monitor authentication
+  failures, and rotate JWT/HMAC secrets through a planned process.
+- Preserve `ENCRYPTION_KEY` across deployments and backups. Losing it makes
+  stored credentials unrecoverable.
+- Run migration before exposing legacy records, then verify no plaintext
+  `password` fields remain.
