@@ -5,7 +5,7 @@ const cookieName = () => process.env.COOKIE_NAME || "passop_token";
 const cookieOptions = () => ({
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",
-  sameSite: "strict",
+  sameSite: "none",
   maxAge: (Number(process.env.JWT_COOKIE_DAYS) || 7) * 24 * 60 * 60 * 1000,
   path: "/",
 });
